@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
-const API = "/api/books";
+const API_BASE = import.meta.env.VITE_API_URL || "";
+const API = `${API_BASE}/api/books`;
 
 /* ── helpers ─────────────────────────────────────────────────────── */
 async function request(method, path, body) {

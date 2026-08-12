@@ -20,3 +20,8 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 .claude
+
+# Environment files
+.env
+.env.*
+!.env.example

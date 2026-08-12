@@ -1,58 +1,101 @@
-"""
-Django REST API for managing books.
-Mock data is loaded on startup so no database setup is needed.
-"""
+"""Django REST API for managing books backed by PostgreSQL."""
+from decimal import Decimal, InvalidOperation
+import json
+
+from django.db import connection
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-import json
-import re
 
-# ── In-memory mock data ─────────────────────────────────────────────
-_next_id = 11
-_books = [
-    {"id": 1,  "title": "The Great Gatsby",          "author": "F. Scott Fitzgerald", "year": 1925, "price": 12.99},
-    {"id": 2,  "title": "1984",                      "author": "George Orwell",       "year": 1949, "price": 10.49},
-    {"id": 3,  "title": "To Kill a Mockingbird",     "author": "Harper Lee",          "year": 1960, "price": 14.99},
-    {"id": 4,  "title": "Pride and Prejudice",       "author": "Jane Austen",         "year": 1813, "price": 9.99},
-    {"id": 5,  "title": "The Catcher in the Rye",    "author": "J.D. Salinger",       "year": 1951, "price": 11.49},
-    {"id": 6,  "title": "Moby-Dick",                 "author": "Herman Melville",     "year": 1851, "price": 13.99},
-    {"id": 7,  "title": "War and Peace",             "author": "Leo Tolstoy",         "year": 1869, "price": 16.99},
-    {"id": 8,  "title": "The Odyssey",               "author": "Homer",               "year": 1800, "price": 8.99},
-    {"id": 9,  "title": "Crime and Punishment",      "author": "Fyodor Dostoevsky",   "year": 1866, "price": 12.49},
-    {"id": 10, "title": "Brave New World",           "author": "Aldous Huxley",       "year": 1932, "price": 11.99},
-]
+BOOK_COLUMNS = ("id", "title", "author", "year", "price")
 
 
 def _json_response(data, status=200):
     return JsonResponse(data, status=status, safe=False, json_dumps_params={"ensure_ascii": False})
 
 
-# ── GET /api/books/  ── list all ────────────────────────────────────
+def _book_from_row(row):
+    book = dict(zip(BOOK_COLUMNS, row))
+    book["price"] = float(book["price"])
+    return book
+
+
+def _parse_body(request):
+    try:
+        return json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        raise ValueError("Invalid JSON body") from exc
+
+
+def _clean_payload(data, current=None):
+    title = data.get("title", current["title"] if current else "")
+    author = data.get("author", current["author"] if current else "")
+    year = data.get("year", current["year"] if current else 2000)
+    price = data.get("price", current["price"] if current else 0)
+
+    try:
+        year = int(year)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("year must be a number") from exc
+
+    try:
+        price = Decimal(str(price))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("price must be a number") from exc
+
+    return {
+        "title": str(title).strip(),
+        "author": str(author).strip(),
+        "year": year,
+        "price": price,
+    }
+
+
+def _fetch_book(pk):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT id, title, author, year, price FROM books WHERE id = %s",
+            [pk],
+        )
+        row = cursor.fetchone()
+
+    return _book_from_row(row) if row else None
+
+
 @csrf_exempt
+@require_http_methods(["GET", "POST"])
 def book_list(request):
     if request.method == "GET":
-        return _json_response(_books)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id, title, author, year, price FROM books ORDER BY id")
+            books = [_book_from_row(row) for row in cursor.fetchall()]
+
+        return _json_response(books)
 
     if request.method == "POST":
-        global _next_id
-        body = json.loads(request.body)
-        book = {
-            "id": _next_id,
-            "title":  body.get("title", ""),
-            "author": body.get("author", ""),
-            "year":   body.get("year", 2000),
-            "price":  body.get("price", 0.0),
-        }
-        _next_id += 1
-        _books.append(book)
+        try:
+            payload = _clean_payload(_parse_body(request))
+        except ValueError as exc:
+            return _json_response({"error": str(exc)}, status=400)
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO books (title, author, year, price)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id, title, author, year, price
+                """,
+                [payload["title"], payload["author"], payload["year"], payload["price"]],
+            )
+            book = _book_from_row(cursor.fetchone())
+
         return _json_response(book, status=201)
 
 
-# ── GET / PUT / DELETE  /api/books/<id>/ ────────────────────────────
 @csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
 def book_detail(request, pk):
-    book = next((b for b in _books if b["id"] == int(pk)), None)
+    book = _fetch_book(pk)
     if not book:
         return _json_response({"error": "Book not found"}, status=404)
 
@@ -60,13 +103,33 @@ def book_detail(request, pk):
         return _json_response(book)
 
     if request.method == "PUT":
-        body = json.loads(request.body)
-        book["title"]  = body.get("title", book["title"])
-        book["author"] = body.get("author", book["author"])
-        book["year"]   = body.get("year", book["year"])
-        book["price"]  = body.get("price", book["price"])
-        return _json_response(book)
+        try:
+            payload = _clean_payload(_parse_body(request), current=book)
+        except ValueError as exc:
+            return _json_response({"error": str(exc)}, status=400)
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE books
+                SET title = %s, author = %s, year = %s, price = %s
+                WHERE id = %s
+                RETURNING id, title, author, year, price
+                """,
+                [
+                    payload["title"],
+                    payload["author"],
+                    payload["year"],
+                    payload["price"],
+                    pk,
+                ],
+            )
+            updated_book = _book_from_row(cursor.fetchone())
+
+        return _json_response(updated_book)
 
     if request.method == "DELETE":
-        _books[:] = [b for b in _books if b["id"] != int(pk)]
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM books WHERE id = %s", [pk])
+
         return _json_response({"message": "Deleted"}, status=200)
