@@ -38,6 +38,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "middleware.SimpleCorsMiddleware",   # must come before CommonMiddleware
     "django.middleware.common.CommonMiddleware",
+    "middleware.NoCacheApiMiddleware",  # prevent 304 responses for API endpoints
 ]
 
 ROOT_URLCONF = "config.urls"
