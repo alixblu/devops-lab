@@ -1,0 +1,10 @@
+[
+  { "ParameterKey": "DomainName",         "ParameterValue": "yourdomain.com" },
+  { "ParameterKey": "HostedZoneId",       "ParameterValue": "Z1234567890ABC" },
+  { "ParameterKey": "FrontendBucketName", "ParameterValue": "book-manager-frontend" },
+  { "ParameterKey": "ECRRepositoryName",  "ParameterValue": "book-manager-backend" },
+  { "ParameterKey": "ECSContainerName",   "ParameterValue": "book-manager-backend" },
+  { "ParameterKey": "ECSContainerPort",   "ParameterValue": "8000" },
+  { "ParameterKey": "CodeCommitRepoName", "ParameterValue": "cicd-bluegreen" },
+  { "ParameterKey": "CodeCommitBranch",   "ParameterValue": "cicd" }
+]
