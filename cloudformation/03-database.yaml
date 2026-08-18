@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Database layer for the Book Manager API (RDS Multi-AZ)"
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+  DBUsername:
+    Type: String
+    MinLength: 1
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9_]*"
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.small
+  DBStorageGB:
+    Type: Number
+    Default: 20
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+  RDSecurityGroupId:
+    Type: String
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub book-manager-${EnvironmentName}-db-subnets
+      SubnetIds: !Ref PrivateSubnetIds
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: book_manager
+      Engine: postgres
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBStorageGB
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: true
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-db
+
+Outputs:
+  DBEndpoint:
+    Description: Database endpoint
+    Value: !GetAtt DBInstance.Endpoint.Address
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-db-endpoint
+
+  DBName:
+    Description: Database name
+    Value: book_manager
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-db-name
+
+  DBPort:
+    Description: Database port
+    Value: "5432"
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-db-port

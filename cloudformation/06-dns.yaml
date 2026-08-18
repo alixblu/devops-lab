@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "DNS records for the Book Manager platform. This stack only creates records in the DNS account or when cross-account management is available."
+
+Parameters:
+  HostedZoneId:
+    Type: String
+    Description: Existing hosted zone ID in the DNS account
+  DomainName:
+    Type: String
+    Default: alixblu.site
+  ApiDomainName:
+    Type: String
+    Default: api.alixblu.site
+  FrontendDomainName:
+    Type: String
+    Default: alixblu.site
+  CloudFrontDomainName:
+    Type: String
+    Description: CloudFront distribution domain name created by the frontend stack
+  ALBDNSName:
+    Type: String
+    Description: ALB DNS name created by the backend stack
+  ALBCanonicalHostedZoneID:
+    Type: String
+    Description: ALB canonical hosted zone ID
+
+Resources:
+  FrontendDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref FrontendDomainName
+      Type: A
+      AliasTarget:
+        DNSName: !Ref CloudFrontDomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+  APIDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref ApiDomainName
+      Type: A
+      AliasTarget:
+        DNSName: !Ref ALBDNSName
+        HostedZoneId: !Ref ALBCanonicalHostedZoneID
+
+Outputs:
+  FrontendRecord:
+    Description: Frontend apex record target
+    Value: !Ref FrontendDNSRecord
+
+  APIRecord:
+    Description: API record target
+    Value: !Ref APIDNSRecord
