@@ -1,0 +1,4 @@
+[
+  { "ParameterKey": "EnvironmentName", "ParameterValue": "prod" },
+  { "ParameterKey": "DomainName", "ParameterValue": "alixblu.site" }
+]

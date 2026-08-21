@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Global CloudFront certificate and WAF. Deploy only in us-east-1."
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+  DomainName:
+    Type: String
+    Default: alixblu.site
+  HostedZoneId:
+    Type: String
+    Description: Route53 hosted zone used for ACM DNS validation
+
+Resources:
+  CloudFrontCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub "*.${DomainName}"
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+        - DomainName: !Sub "*.${DomainName}"
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-cloudfront-cert
+
+  CloudFrontWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub book-manager-${EnvironmentName}-webacl
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub book-manager-${EnvironmentName}-webacl
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 1
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub book-manager-${EnvironmentName}-common-rules
+            SampledRequestsEnabled: true
+
+Outputs:
+  CloudFrontCertificateArn:
+    Value: !Ref CloudFrontCertificate
+  WebACLArn:
+    Value: !GetAtt CloudFrontWebACL.Arn

@@ -1,0 +1,324 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Observability and audit layer for the Book Manager platform"
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  ALBFullName:
+    Type: String
+  ECSClusterName:
+    Type: String
+  ECSServiceName:
+    Type: String
+  DBInstanceIdentifier:
+    Type: String
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Optional email address that receives alarm notifications
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
+Resources:
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub book-manager-${EnvironmentName}-alerts
+
+  AlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+      TopicArn: !Ref AlertTopic
+
+  VPCFlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/vpc/book-manager-${EnvironmentName}-flow-logs
+      RetentionInDays: 90
+
+  VPCFlowLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub book-manager-${EnvironmentName}-vpc-flow-logs-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PublishFlowLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  - logs:PutLogEvents
+                Resource: !Sub ${VPCFlowLogGroup.Arn}:*
+
+  VPCFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      ResourceType: VPC
+      ResourceId: !Ref VpcId
+      TrafficType: ALL
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref VPCFlowLogGroup
+      DeliverLogsPermissionArn: !GetAtt VPCFlowLogsRole.Arn
+      MaxAggregationInterval: 60
+
+  CloudTrailLogBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  CloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudTrailLogBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudTrailGetBucketAcl
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt CloudTrailLogBucket.Arn
+          - Sid: AllowCloudTrailWriteLogs
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub ${CloudTrailLogBucket.Arn}/AWSLogs/${AWS::AccountId}/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+
+  CloudTrailLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/cloudtrail/book-manager-${EnvironmentName}
+      RetentionInDays: 365
+
+  CloudTrailLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub book-manager-${EnvironmentName}-cloudtrail-logs-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PublishCloudTrailLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub ${CloudTrailLogGroup.Arn}:*
+
+  CloudTrail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: CloudTrailBucketPolicy
+    Properties:
+      TrailName: !Sub book-manager-${EnvironmentName}-trail
+      S3BucketName: !Ref CloudTrailLogBucket
+      CloudWatchLogsLogGroupArn: !GetAtt CloudTrailLogGroup.Arn
+      CloudWatchLogsRoleArn: !GetAtt CloudTrailLogsRole.Arn
+      EnableLogFileValidation: true
+      IncludeGlobalServiceEvents: true
+      IsLogging: true
+      IsMultiRegionTrail: true
+
+  UnauthorizedApiCallMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref CloudTrailLogGroup
+      FilterPattern: '{ ($.errorCode = "*UnauthorizedOperation") || ($.errorCode = "AccessDenied*") }'
+      MetricTransformations:
+        - MetricNamespace: BookManager/Security
+          MetricName: UnauthorizedApiCalls
+          MetricValue: "1"
+
+  UnauthorizedApiCallAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub book-manager-${EnvironmentName}-unauthorized-api-calls
+      AlarmDescription: Alerts when CloudTrail detects unauthorized API calls
+      Namespace: BookManager/Security
+      MetricName: UnauthorizedApiCalls
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  RejectedTrafficMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref VPCFlowLogGroup
+      FilterPattern: '[version, account_id, interface_id, srcaddr, dstaddr, srcport, dstport, protocol, packets, bytes, start, end, action = REJECT, log_status]'
+      MetricTransformations:
+        - MetricNamespace: BookManager/Network
+          MetricName: RejectedTraffic
+          MetricValue: "1"
+
+  RejectedTrafficAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub book-manager-${EnvironmentName}-rejected-network-traffic
+      AlarmDescription: Alerts when the VPC flow log reports rejected traffic
+      Namespace: BookManager/Network
+      MetricName: RejectedTraffic
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  RDSCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub book-manager-${EnvironmentName}-rds-cpu-high
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceIdentifier
+      AlarmActions: [!Ref AlertTopic]
+
+  ECSCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub book-manager-${EnvironmentName}-ecs-cpu-high
+      Namespace: AWS/ECS
+      MetricName: CPUUtilization
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ECSClusterName
+        - Name: ServiceName
+          Value: !Ref ECSServiceName
+      AlarmActions: [!Ref AlertTopic]
+
+  ALB5XXAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub book-manager-${EnvironmentName}-alb-target-5xx
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref ALBFullName
+      AlarmActions: [!Ref AlertTopic]
+
+  OperationsDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub book-manager-${EnvironmentName}-operations
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "ECS service CPU utilization",
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "metrics": [["AWS/ECS", "CPUUtilization", "ClusterName", "${ECSClusterName}", "ServiceName", "${ECSServiceName}"]]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "RDS CPU utilization",
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "metrics": [["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${DBInstanceIdentifier}"]]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "title": "ALB target 5XX responses",
+                "view": "timeSeries",
+                "region": "${AWS::Region}",
+                "metrics": [["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", "${ALBFullName}"]]
+              }
+            }
+          ]
+        }
+
+Outputs:
+  AlertTopicArn:
+    Description: SNS topic for infrastructure alarms
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-alerts-topic-arn
+
+  CloudTrailBucketName:
+    Description: S3 bucket containing CloudTrail logs
+    Value: !Ref CloudTrailLogBucket
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-cloudtrail-bucket

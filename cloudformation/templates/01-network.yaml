@@ -1,0 +1,359 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Network layer for the Book Manager platform (VPC, subnets, NAT, route tables)"
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Environment name used in tags and exported names
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1CIDR:
+    Type: String
+    Default: 10.0.1.0/24
+  PublicSubnet2CIDR:
+    Type: String
+    Default: 10.0.2.0/24
+  PrivateSubnet1CIDR:
+    Type: String
+    Default: 10.0.3.0/24
+  PrivateSubnet2CIDR:
+    Type: String
+    Default: 10.0.4.0/24
+  PrivateSubnet3CIDR:
+    Type: String
+    Default: 10.0.5.0/24
+  PrivateSubnet4CIDR:
+    Type: String
+    Default: 10.0.6.0/24
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-igw
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1CIDR
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-public-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2CIDR
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-public-2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-database-private-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-database-private-2
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet3CIDR
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-ecs-private-1
+
+  PrivateSubnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet4CIDR
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-ecs-private-2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  NatEIPAZ1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGatewayAZ1:
+    Type: AWS::EC2::NatGateway
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      AllocationId: !GetAtt NatEIPAZ1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-nat-az1
+
+  NatEIPAZ2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGatewayAZ2:
+    Type: AWS::EC2::NatGateway
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      AllocationId: !GetAtt NatEIPAZ2.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-nat-az2
+
+  PrivateRouteTableAZ1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-private-rt-az1
+
+  PrivateRouteAZ1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayAZ1
+
+  PrivateRouteTableAZ2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-private-rt-az2
+
+  PrivateRouteAZ2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayAZ2
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTableAZ1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTableAZ2
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTableAZ1
+
+  PrivateSubnet4RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet4
+      RouteTableId: !Ref PrivateRouteTableAZ2
+
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PrivateRouteTableAZ1
+        - !Ref PrivateRouteTableAZ2
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: "*"
+
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Permit HTTPS traffic from the VPC to interface endpoints
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VpcCIDR
+      Tags:
+        - Key: Name
+          Value: !Sub book-manager-${EnvironmentName}-vpc-endpoints-sg
+
+  SSMVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet3, !Ref PrivateSubnet4]
+      SecurityGroupIds: [!Ref VPCEndpointSecurityGroup]
+
+  SSMMessagesVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet3, !Ref PrivateSubnet4]
+      SecurityGroupIds: [!Ref VPCEndpointSecurityGroup]
+
+  EC2MessagesVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet3, !Ref PrivateSubnet4]
+      SecurityGroupIds: [!Ref VPCEndpointSecurityGroup]
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-vpc-id
+
+  PublicSubnetIds:
+    Description: Public subnet IDs
+    Value: !Join [",", [!Ref PublicSubnet1, !Ref PublicSubnet2]]
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-public-subnets
+
+  DatabasePrivateSubnetIds:
+    Description: Private subnet IDs reserved for the RDS database
+    Value: !Join [",", [!Ref PrivateSubnet1, !Ref PrivateSubnet2]]
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-database-private-subnets
+
+  ECSPrivateSubnetIds:
+    Description: Private subnet IDs reserved for ECS tasks
+    Value: !Join [",", [!Ref PrivateSubnet3, !Ref PrivateSubnet4]]
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-ecs-private-subnets
+
+  PublicRouteTableId:
+    Description: Public route table ID
+    Value: !Ref PublicRouteTable
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-public-rt
+
+  PrivateRouteTableAZ1Id:
+    Description: Private route table ID for Availability Zone 1
+    Value: !Ref PrivateRouteTableAZ1
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-private-rt-az1
+
+  PrivateRouteTableAZ2Id:
+    Description: Private route table ID for Availability Zone 2
+    Value: !Ref PrivateRouteTableAZ2
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-private-rt-az2
+
+  NatGatewayAZ1Id:
+    Description: NAT Gateway ID for Availability Zone 1
+    Value: !Ref NatGatewayAZ1
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-nat-gateway-az1-id
+
+  NatGatewayAZ2Id:
+    Description: NAT Gateway ID for Availability Zone 2
+    Value: !Ref NatGatewayAZ2
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-nat-gateway-az2-id
+
+  S3VPCEndpointId:
+    Description: S3 VPC Gateway Endpoint ID
+    Value: !Ref S3VPCEndpoint
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-s3-endpoint
+
+  SSMVPCEndpointId:
+    Description: Systems Manager interface VPC endpoint ID
+    Value: !Ref SSMVPCEndpoint
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-ssm-endpoint

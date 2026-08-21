@@ -1,0 +1,6 @@
+[
+  { "ParameterKey": "EnvironmentName", "ParameterValue": "prod" },
+  { "ParameterKey": "DBUsername", "ParameterValue": "bookadmin" },
+  { "ParameterKey": "DBInstanceClass", "ParameterValue": "db.m5.large" },
+  { "ParameterKey": "DBStorageGB", "ParameterValue": "50" }
+]

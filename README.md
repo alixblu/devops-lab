@@ -1,4 +1,4 @@
-# Book Manager
+# DevOps on AWS
 
 A production-ready book management CRUD app with **Django REST** backend and **React/Vite** frontend. Deployed on AWS with automated CI/CD, blue/green deployments, and enterprise-grade infrastructure.
 
@@ -58,15 +58,17 @@ The application is deployed on AWS with a modern, scalable architecture:
 
 ### CloudFormation Stacks (Modular)
 
-The infrastructure is organized into 7 independent, reusable stacks:
+The infrastructure is organized into 9 independent, reusable stacks:
 
 1. **01-network.yaml** — VPC, subnets, NAT Gateway, S3 VPC Endpoint
-2. **02-security.yaml** — Security Groups, AWS WAF rules
+2. **02-security.yaml** — Regional Security Groups
 3. **03-database.yaml** — RDS Multi-AZ PostgreSQL
-4. **07-certificates.yaml** — ACM certificates (ALB + CloudFront)
+4. **07-certificates.yaml** — Regional ACM certificate for the ALB
 5. **04-backend.yaml** — ECR, ECS, ALB, CodePipeline, CodeBuild, CodeDeploy
 6. **05-frontend.yaml** — S3 bucket, CloudFront distribution, OAC
 7. **06-dns.yaml** — Route53 A records (apex + API subdomain)
+8. **08-observability.yaml** — CloudWatch, CloudTrail, VPC Flow Logs, SNS alerts
+9. **09-global.yaml** — CloudFront ACM certificate and WAF in `us-east-1`
 
 **Deployment guides:**
 - [DEPLOYMENT_ORDER.md](./DEPLOYMENT_ORDER.md) — CLI-based deployment with AWS CLI
@@ -115,7 +117,7 @@ npm run dev                          # http://localhost:5173
 - `CORS_ALLOWED_ORIGINS` — Frontend origins for CORS
 
 ### Infrastructure
-- Parameter files: `cloudformation/parameters/{dev,staging,prod}.json`
+- Parameter files: `cloudformation/parameters/{environment}-{stack}.json`
 
 ---
 
@@ -135,18 +137,12 @@ fcaj-lab/
 │   ├── index.html           # HTML entry point
 │   ├── package.json         # NPM dependencies
 │   └── vite.config.js       # Vite configuration
+├── architecture/            # Architecture notes and diagrams
+│   └── README.md
 ├── cloudformation/          # Infrastructure as Code
-│   ├── 01-network.yaml
-│   ├── 02-security.yaml
-│   ├── 03-database.yaml
-│   ├── 04-backend.yaml
-│   ├── 05-frontend.yaml
-│   ├── 06-dns.yaml
-│   ├── 07-certificates.yaml
-│   └── parameters/          # Environment-specific parameters
-│       ├── dev.json
-│       ├── staging.json
-│       └── prod.json
+│   ├── templates/            # One template per infrastructure layer
+│   ├── parameters/           # One parameter file per environment and stack
+│   └── scripts/              # Deployment helpers
 ├── buildspec.yml            # CodeBuild build specification
 ├── docker-compose.yml       # Local development setup
 ├── init.sql                 # Database initialization script
@@ -167,33 +163,3 @@ fcaj-lab/
 ✅ **Secrets Management** — Sensitive values in AWS Secrets Manager  
 ✅ **VPC Optimization** — S3 VPC endpoint reduces NAT charges  
 ✅ **Auto-scaling** — ECS service auto-scales based on CPU utilization  
-
----
-
-## Deployment Timeline
-
-| Environment | Status | Time |
-|------------|--------|------|
-| Local Dev | ✅ Ready | Immediate |
-| Dev (AWS) | ✅ Ready | ~37 minutes |
-| Staging | ✅ Ready | ~37 minutes |
-| Production | ✅ Ready | ~37 minutes |
-
-*Total deployment time includes parallel certificate validation*
-
----
-
-## Next Steps
-
-1. **Set up AWS Account** with appropriate IAM permissions
-2. **Create Route53 hosted zone** for your domain
-3. **Generate ACM certificates** in appropriate regions
-4. **Follow deployment guide** → [CLOUDFORMATION_CONSOLE_GUIDE.md](./CLOUDFORMATION_CONSOLE_GUIDE.md)
-5. **Authorize GitHub connection** in CodePipeline
-6. **Push to main branch** → CodePipeline automatically deploys
-
----
-
-## Support
-
-For deployment issues, refer to [CLOUDFORMATION_CONSOLE_GUIDE.md](./CLOUDFORMATION_CONSOLE_GUIDE.md#troubleshooting) troubleshooting section.

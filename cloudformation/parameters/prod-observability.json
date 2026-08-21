@@ -1,0 +1,4 @@
+[
+  { "ParameterKey": "EnvironmentName", "ParameterValue": "prod" },
+  { "ParameterKey": "AlertEmail", "ParameterValue": "phuongtaylor3011@gmail.com" }
+]

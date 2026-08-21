@@ -13,6 +13,16 @@ Parameters:
     Default: book-manager-frontend
   WebACLArn:
     Type: String
+  CloudFrontCertificateArn:
+    Type: String
+  EnableShieldAdvanced:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Enable only after subscribing the AWS account to Shield Advanced
+
+Conditions:
+  ShieldAdvancedEnabled: !Equals [!Ref EnableShieldAdvanced, "true"]
 
 Resources:
   FrontendBucket:
@@ -63,6 +73,7 @@ Resources:
       DistributionConfig:
         Enabled: true
         Comment: !Sub book-manager-${EnvironmentName}-frontend
+        WebACLId: !Ref WebACLArn
         Aliases:
           - !Ref DomainName
         DefaultRootObject: index.html
@@ -79,15 +90,16 @@ Resources:
           Compress: true
           CachePolicyId: 658327ea-f89d-4fab-a4a4-d6a7d1b7f8
         ViewerCertificate:
-          AcmCertificateArn: !ImportValue !Sub book-manager-${EnvironmentName}-cloudfront-certificate-arn
+          AcmCertificateArn: !Ref CloudFrontCertificateArn
           MinimumProtocolVersion: TLSv1.2_2021
           SslSupportMethod: sni-only
 
-  WebACLAssociation:
-    Type: AWS::WAFv2::WebACLAssociation
+  CloudFrontShieldProtection:
+    Type: AWS::Shield::Protection
+    Condition: ShieldAdvancedEnabled
     Properties:
+      Name: !Sub book-manager-${EnvironmentName}-cloudfront-shield
       ResourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
-      WebACLArn: !Ref WebACLArn
 
 Outputs:
   FrontendBucketName:

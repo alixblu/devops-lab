@@ -2,16 +2,23 @@
 
 Complete step-by-step instructions for deploying Book Manager infrastructure via AWS CloudFormation Console.
 
-**IMPORTANT:** Start the **Certificates stack immediately after Network** to let validation happen in parallel. This saves 5-30 minutes!
+**IMPORTANT:** Regional resources run in your application region, such as
+Sydney (`ap-southeast-2`). CloudFront's certificate and WAF are created by
+`cloudformation/templates/09-global.yaml` in `us-east-1`.
 
 ---
 
 ## Prerequisites
 
 - AWS Account with appropriate permissions
+- Deployment region: your application region; use `us-east-1` only for `09-global.yaml`
 - Access to CloudFormation Console
 - CloudFormation templates uploaded to S3 or local machine
-- Parameter files (dev.json, staging.json, prod.json) ready
+- Stack-specific parameter files in `cloudformation/parameters/` ready
+
+`cloudformation/scripts/deploy-prod.cmd` retrieves values from preceding stack
+outputs automatically. The output-copying instructions below apply only when
+deploying manually through the CloudFormation console.
 
 ---
 
@@ -23,7 +30,7 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
 
 ### 1.2 Specify Template
 1. Choose **Upload a template file**
-2. Click **Choose file** and select `cloudformation/01-network.yaml`
+2. Click **Choose file** and select `cloudformation/templates/01-network.yaml`
 3. Click **Next**
 
 ### 1.3 Configure Stack Details
@@ -32,9 +39,11 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
    - `EnvironmentName`: `dev` (or `prod`/`staging`)
    - `VpcCIDR`: `10.0.0.0/16`
    - `PublicSubnet1CIDR`: `10.0.1.0/24`
-   - `PublicSubnet2CIDR`: `10.0.2.0/24`
-   - `PrivateSubnet1CIDR`: `10.0.3.0/24`
-   - `PrivateSubnet2CIDR`: `10.0.4.0/24`
+    - `PublicSubnet2CIDR`: `10.0.2.0/24`
+    - `PrivateSubnet1CIDR`: `10.0.3.0/24` (database, AZ 1)
+    - `PrivateSubnet2CIDR`: `10.0.4.0/24` (database, AZ 2)
+    - `PrivateSubnet3CIDR`: `10.0.5.0/24` (ECS, AZ 1)
+    - `PrivateSubnet4CIDR`: `10.0.6.0/24` (ECS, AZ 2)
 3. Click **Next**
 
 ### 1.4 Configure Stack Options
@@ -45,6 +54,10 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
 1. Review all details
 2. Check **"I acknowledge that AWS CloudFormation might create IAM resources"** *(only if prompted)*
 3. Click **Create stack**
+
+The public subnets host the internet-facing ALB. The NAT gateway is also a
+network egress component in a public subnet so private ECS tasks can reach AWS
+services without receiving public IP addresses.
 
 ### 1.6 Monitor Deployment
 - Status page shows: **CREATE_IN_PROGRESS** → **CREATE_COMPLETE**
@@ -59,15 +72,15 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
 
 ### 1b.1 Create Stack
 1. Click **Create stack** → **With new resources (standard)**
-2. Upload `cloudformation/07-certificates.yaml`
+2. Upload `cloudformation/templates/07-certificates.yaml`
 3. Click **Next**
 
 ### 1b.2 Configure Stack Details
 1. **Stack name:** `book-manager-dev-certificates`
 2. **Parameters:**
-   - `EnvironmentName`: `dev`
-   - `DomainName`: `alixblu.site`
-   - `ApiDomainName`: `api.alixblu.site`
+    - `EnvironmentName`: `dev`
+    - `DomainName`: `alixblu.site`
+    - `ApiDomainName`: `api.alixblu.site`
 3. Click **Next**
 
 ### 1b.3 Review and Create
@@ -83,14 +96,19 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
 
 ### 2.1 Create Stack
 1. Click **Create stack** → **With new resources (standard)**
-2. Upload `cloudformation/02-security.yaml`
+2. Upload `cloudformation/templates/02-security.yaml`
 3. Click **Next**
 
 ### 2.2 Configure Stack Details
 1. **Stack name:** `book-manager-dev-security`
 2. **Parameters:**
-   - `EnvironmentName`: `dev`
-   - `VpcId`: Copy from **Step 1 Outputs** → `VpcId` field
+    - `EnvironmentName`: `dev`
+    - `VpcId`: Copy from **Step 1 Outputs** → `VpcId` field
+
+   Security groups apply across the VPC; they do not need subnet IDs. The ALB
+   security group is used by the load balancer in the public subnets, while the
+   ECS and RDS security groups protect resources in their respective private
+   subnets.
 3. Click **Next**
 
 ### 2.3 Review and Create
@@ -104,19 +122,21 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
 
 ### 3.1 Create Stack
 1. Click **Create stack** → **With new resources (standard)**
-2. Upload `cloudformation/03-database.yaml`
+2. Upload `cloudformation/templates/03-database.yaml`
 3. Click **Next**
 
 ### 3.2 Configure Stack Details
 1. **Stack name:** `book-manager-dev-database`
 2. **Parameters:**
-   - `EnvironmentName`: `dev`
-   - `DBUsername`: `bookadmin`
-   - `DBPassword`: `[STRONG_PASSWORD]` (26+ chars, special chars)
-   - `DBInstanceClass`: `db.t3.small` (dev) or `db.t3.medium` (prod)
-   - `DBStorageGB`: `20` (dev) or `100` (prod)
-   - `PrivateSubnetIds`: Copy from **Step 1 Outputs** → `PrivateSubnetIds`
-   - `RDSecurityGroupId`: Copy from **Step 2 Outputs** → `DatabaseSecurityGroupId`
+    - `EnvironmentName`: `dev`
+    - `DBUsername`: `bookadmin`
+    - `DBInstanceClass`: Select the intended RDS instance class
+    - `DBStorageGB`: Select the intended allocated storage in GiB
+    - `DatabasePrivateSubnetIds`: Copy from **Step 1 Outputs** → `DatabasePrivateSubnetIds`
+    - `RDSecurityGroupId`: Copy from **Step 2 Outputs** → `RDSecurityGroupId`
+
+   The database uses an RDS-managed master secret; do not enter or commit a
+   database password.
 3. Click **Next**
 
 ### 3.3 Review and Create
@@ -126,7 +146,7 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
 
 ---
 
-## Step 4: Certificate Validation Check (07-certificates.yaml)
+## Step 4: Certificate Validation Check
 
 **Check if your certificates are validated yet.**
 
@@ -140,21 +160,14 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
    - 🟢 **ISSUED** → Great! Proceed to Step 5
    - 🟡 **Pending validation** → Continue to Step 5 anyway, check again later
 
-### 4.2 CloudFront Certificate (MANUAL - REQUIRED IN us-east-1)
-1. Go to **AWS Certificate Manager**
-2. **Switch region to us-east-1** (top-right corner)
-3. Click **Request a certificate**
-4. **Certificate type:** Request a public certificate
-5. **Domain names:**
-   - `alixblu.site`
-   - `*.alixblu.site`
-6. **Validation method:** DNS
-7. Click **Request**
-8. Click on the certificate to open it
-9. Under **Domains**, click **Create records in Route53**
-   - This auto-validates via DNS
-10. Wait for **Status: ISSUED**
-11. Copy the **Certificate ARN** (looks like: `arn:aws:acm:us-east-1:123456789012:certificate/abc123...`)
+### 4.2 CloudFront Certificate and WAF (`09-global.yaml`)
+1. Switch the AWS Console region to `us-east-1`.
+2. Create a CloudFormation stack using `cloudformation/templates/09-global.yaml`.
+3. Set `EnvironmentName`, `DomainName`, and the existing `HostedZoneId`.
+4. CloudFormation requests and DNS-validates the CloudFront certificate.
+5. The same stack creates the CloudFront-scoped WAF.
+6. Wait for the stack to complete, then copy `CloudFrontCertificateArn` and `WebACLArn` from its outputs.
+7. Pass those outputs to the frontend stack.
 
 ---
 
@@ -168,7 +181,7 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
 
 ### 5.1 Create Stack
 1. Click **Create stack** → **With new resources (standard)**
-2. Upload `cloudformation/04-backend.yaml`
+2. Upload `cloudformation/templates/04-backend.yaml`
 3. Click **Next**
 
 ### 5.2 Configure Stack Details
@@ -182,14 +195,13 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
    - `ECSContainerName`: `book-manager-backend`
    - `DesiredTaskCount`: `2` (dev) or `3` (prod)
    - `ECRImageTag`: `latest`
-   - `PublicSubnetIds`: Copy from **Step 1 Outputs**
-   - `PrivateSubnetIds`: Copy from **Step 1 Outputs**
+    - `PublicSubnetIds`: Copy from **Step 1 Outputs** → `PublicSubnetIds` (ALB only)
+    - `ECSPrivateSubnetIds`: Copy from **Step 1 Outputs** → `ECSPrivateSubnetIds`
    - `ALBSecurityGroupId`: Copy from **Step 2 Outputs**
-   - `ECSSecurityGroupId`: Copy from **Step 2 Outputs**
-   - `DBEndpoint`: Copy from **Step 3 Outputs** → `DBEndpoint`
-   - `DBName`: `book_manager`
-   - `DBUsername`: `bookadmin` (same as Step 3)
-   - `DBPassword`: `[SAME_PASSWORD_AS_STEP_3]`
+    - `ECSSecurityGroupId`: Copy from **Step 2 Outputs**
+    - `DBEndpoint`: Copy from **Step 3 Outputs** → `DBEndpoint`
+    - `DBName`: `book_manager`
+    - `DBSecretArn`: Copy from **Step 3 Outputs** → `DBSecretArn`
    - `GitHubOwner`: Your GitHub username
    - `GitHubRepo`: `fcaj-lab`
    - `GitHubBranch`: `main`
@@ -227,7 +239,7 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
 
 ### 6.1 Create Stack
 1. Click **Create stack** → **With new resources (standard)**
-2. Upload `cloudformation/05-frontend.yaml`
+2. Upload `cloudformation/templates/05-frontend.yaml`
 3. Click **Next**
 
 ### 6.2 Configure Stack Details
@@ -251,7 +263,7 @@ Complete step-by-step instructions for deploying Book Manager infrastructure via
 
 ### 7.1 Create Stack
 1. Click **Create stack** → **With new resources (standard)**
-2. Upload `cloudformation/06-dns.yaml`
+2. Upload `cloudformation/templates/06-dns.yaml`
 3. Click **Next**
 
 ### 7.2 Configure Stack Details

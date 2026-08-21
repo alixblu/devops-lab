@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Security layer for the Book Manager infrastructure (security groups and WAF)"
+Description: "Regional security groups for the Book Manager infrastructure"
 
 Parameters:
   EnvironmentName:
@@ -72,31 +72,6 @@ Resources:
         - Key: Name
           Value: !Sub book-manager-${EnvironmentName}-rds-sg
 
-  WebACL:
-    Type: AWS::WAFv2::WebACL
-    Properties:
-      Name: !Sub book-manager-${EnvironmentName}-webacl
-      Scope: CLOUDFRONT
-      DefaultAction:
-        Allow: {}
-      VisibilityConfig:
-        CloudWatchMetricsEnabled: true
-        MetricName: !Sub book-manager-${EnvironmentName}-webacl
-        SampledRequestsEnabled: true
-      Rules:
-        - Name: AWSManagedRulesCommonRuleSet
-          Priority: 1
-          Statement:
-            ManagedRuleGroupStatement:
-              VendorName: AWS
-              Name: AWSManagedRulesCommonRuleSet
-          OverrideAction:
-            None: {}
-          VisibilityConfig:
-            CloudWatchMetricsEnabled: true
-            MetricName: !Sub book-manager-${EnvironmentName}-common-rules
-            SampledRequestsEnabled: true
-
 Outputs:
   ALBSecurityGroupId:
     Description: ALB security group ID
@@ -116,8 +91,3 @@ Outputs:
     Export:
       Name: !Sub book-manager-${EnvironmentName}-rds-sg-id
 
-  WebACLArn:
-    Description: WAF Web ACL ARN
-    Value: !GetAtt WebACL.Arn
-    Export:
-      Name: !Sub book-manager-${EnvironmentName}-waf-arn

@@ -1,0 +1,6 @@
+[
+  { "ParameterKey": "EnvironmentName", "ParameterValue": "prod" },
+  { "ParameterKey": "DomainName", "ParameterValue": "alixblu.site" },
+  { "ParameterKey": "FrontendBucketName", "ParameterValue": "book-manager-frontend-prod" },
+  { "ParameterKey": "EnableShieldAdvanced", "ParameterValue": "false" }
+]

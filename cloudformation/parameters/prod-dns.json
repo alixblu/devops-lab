@@ -1,0 +1,5 @@
+[
+  { "ParameterKey": "DomainName", "ParameterValue": "alixblu.site" },
+  { "ParameterKey": "ApiDomainName", "ParameterValue": "api.alixblu.site" },
+  { "ParameterKey": "FrontendDomainName", "ParameterValue": "alixblu.site" }
+]

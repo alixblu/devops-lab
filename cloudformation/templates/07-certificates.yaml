@@ -1,22 +1,15 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "ACM certificates for CloudFront (us-east-1) and ALB"
+Description: "Regional ACM certificate for the application load balancer"
 
 Parameters:
   EnvironmentName:
     Type: String
     Default: dev
-  DomainName:
-    Type: String
-    Default: alixblu.site
   ApiDomainName:
     Type: String
     Default: api.alixblu.site
 
 Resources:
-  # Note: CloudFront requires certificates to be in us-east-1
-  # This certificate is created in us-east-1 via nested stack or manual creation
-  # For now, we'll create the ALB certificate here and document manual CloudFront cert creation
-
   ALBCertificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
@@ -36,8 +29,3 @@ Outputs:
     Export:
       Name: !Sub book-manager-${EnvironmentName}-alb-certificate-arn
 
-  CloudFrontCertificateArn:
-    Description: ACM certificate ARN for CloudFront (must be in us-east-1)
-    Value: !Sub "arn:aws:acm:us-east-1:${AWS::AccountId}:certificate/REPLACE_WITH_US_EAST_1_CERT_ID"
-    Export:
-      Name: !Sub book-manager-${EnvironmentName}-cloudfront-certificate-arn

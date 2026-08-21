@@ -1,0 +1,4 @@
+[
+  { "ParameterKey": "EnvironmentName", "ParameterValue": "prod" },
+  { "ParameterKey": "ECSContainerPort", "ParameterValue": "8000" }
+]

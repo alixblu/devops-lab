@@ -28,7 +28,7 @@ Parameters:
     Default: latest
   PublicSubnetIds:
     Type: CommaDelimitedList
-  PrivateSubnetIds:
+  ECSPrivateSubnetIds:
     Type: CommaDelimitedList
   ALBSecurityGroupId:
     Type: String
@@ -38,11 +38,8 @@ Parameters:
     Type: String
   DBName:
     Type: String
-  DBUsername:
+  DBSecretArn:
     Type: String
-  DBPassword:
-    Type: String
-    NoEcho: true
   GitHubOwner:
     Type: String
   GitHubRepo:
@@ -84,18 +81,6 @@ Resources:
         PasswordLength: 32
         ExcludeCharacters: '"@/\\'
 
-  DBUserSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub book-manager-${EnvironmentName}-db-user
-      SecretString: !Ref DBUsername
-
-  DBPasswordSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub book-manager-${EnvironmentName}-db-password
-      SecretString: !Ref DBPassword
-
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -120,8 +105,7 @@ Resources:
                   - secretsmanager:GetSecretValue
                 Resource:
                   - !Ref DjangoSecretKeySecret
-                  - !Ref DBUserSecret
-                  - !Ref DBPasswordSecret
+                  - !Ref DBSecretArn
 
   ECSTaskRole:
     Type: AWS::IAM::Role
@@ -155,7 +139,9 @@ Resources:
       Port: !Ref ECSContainerPort
       Protocol: HTTP
       TargetType: ip
-      VpcId: !ImportValue !Sub book-manager-${EnvironmentName}-vpc-id
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: book-manager-${EnvironmentName}-vpc-id
       HealthCheckPath: /health
       HealthCheckIntervalSeconds: 30
       HealthyThresholdCount: 2
@@ -171,7 +157,9 @@ Resources:
       Port: !Ref ECSContainerPort
       Protocol: HTTP
       TargetType: ip
-      VpcId: !ImportValue !Sub book-manager-${EnvironmentName}-vpc-id
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: book-manager-${EnvironmentName}-vpc-id
       HealthCheckPath: /health
       HealthCheckIntervalSeconds: 30
       HealthyThresholdCount: 2
@@ -200,7 +188,9 @@ Resources:
       Port: 443
       Protocol: HTTPS
       Certificates:
-        - CertificateArn: !ImportValue !Sub book-manager-${EnvironmentName}-alb-certificate-arn
+        - CertificateArn:
+            Fn::ImportValue:
+              Fn::Sub: book-manager-${EnvironmentName}-alb-certificate-arn
       DefaultActions:
         - Type: forward
           ForwardConfig:
@@ -365,7 +355,7 @@ Resources:
             - Name: DJANGO_DEBUG
               Value: "false"
             - Name: DJANGO_ALLOWED_HOSTS
-              Value: !Ref ApiDomainName
+              Value: !Join [",", [!Ref ApiDomainName, !GetAtt ALB.DNSName]]
             - Name: DB_HOST
               Value: !Ref DBEndpoint
             - Name: DB_PORT
@@ -378,9 +368,9 @@ Resources:
             - Name: DJANGO_SECRET_KEY
               ValueFrom: !Ref DjangoSecretKeySecret
             - Name: DB_USER
-              ValueFrom: !Ref DBUserSecret
+              ValueFrom: !Sub "${DBSecretArn}:username::"
             - Name: DB_PASSWORD
-              ValueFrom: !Ref DBPasswordSecret
+              ValueFrom: !Sub "${DBSecretArn}:password::"
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -406,7 +396,7 @@ Resources:
           AssignPublicIp: DISABLED
           SecurityGroups:
             - !Ref ECSSecurityGroupId
-          Subnets: !Ref PrivateSubnetIds
+          Subnets: !Ref ECSPrivateSubnetIds
       LoadBalancers:
         - ContainerName: !Ref ECSContainerName
           ContainerPort: !Ref ECSContainerPort
@@ -580,6 +570,24 @@ Outputs:
     Value: !GetAtt ALB.DNSName
     Export:
       Name: !Sub book-manager-${EnvironmentName}-alb-dns-name
+
+  ALBFullName:
+    Description: ALB full name for CloudWatch metric dimensions
+    Value: !GetAtt ALB.LoadBalancerFullName
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-alb-full-name
+
+  ECSServiceName:
+    Description: ECS service name for CloudWatch metric dimensions
+    Value: !GetAtt ECSService.Name
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-ecs-service-name
+
+  ALBCanonicalHostedZoneID:
+    Description: ALB canonical hosted zone ID for Route53 alias records
+    Value: !GetAtt ALB.CanonicalHostedZoneID
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-alb-canonical-hosted-zone-id
 
   APIEndpoint:
     Description: API endpoint domain

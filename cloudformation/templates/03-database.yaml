@@ -9,17 +9,13 @@ Parameters:
     Type: String
     MinLength: 1
     AllowedPattern: "[a-zA-Z][a-zA-Z0-9_]*"
-  DBPassword:
-    Type: String
-    NoEcho: true
-    MinLength: 8
   DBInstanceClass:
     Type: String
     Default: db.t3.small
   DBStorageGB:
     Type: Number
     Default: 20
-  PrivateSubnetIds:
+  DatabasePrivateSubnetIds:
     Type: CommaDelimitedList
   RDSecurityGroupId:
     Type: String
@@ -29,23 +25,24 @@ Resources:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
       DBSubnetGroupDescription: !Sub book-manager-${EnvironmentName}-db-subnets
-      SubnetIds: !Ref PrivateSubnetIds
+      SubnetIds: !Ref DatabasePrivateSubnetIds
 
   DBInstance:
     Type: AWS::RDS::DBInstance
     Properties:
       DBName: book_manager
       Engine: postgres
+      EngineVersion: "17.9"
       DBInstanceClass: !Ref DBInstanceClass
       AllocatedStorage: !Ref DBStorageGB
-      StorageType: gp3
+      StorageType: gp2
       StorageEncrypted: true
       MultiAZ: true
       PubliclyAccessible: false
       BackupRetentionPeriod: 7
       DeletionProtection: true
       MasterUsername: !Ref DBUsername
-      MasterUserPassword: !Ref DBPassword
+      ManageMasterUserPassword: true
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref RDSecurityGroupId
@@ -60,6 +57,12 @@ Outputs:
     Export:
       Name: !Sub book-manager-${EnvironmentName}-db-endpoint
 
+  DBInstanceIdentifier:
+    Description: RDS DB instance identifier
+    Value: !Ref DBInstance
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-db-instance-id
+
   DBName:
     Description: Database name
     Value: book_manager
@@ -71,3 +74,9 @@ Outputs:
     Value: "5432"
     Export:
       Name: !Sub book-manager-${EnvironmentName}-db-port
+
+  DBSecretArn:
+    Description: RDS-managed master user secret ARN
+    Value: !GetAtt DBInstance.MasterUserSecret.SecretArn
+    Export:
+      Name: !Sub book-manager-${EnvironmentName}-db-secret-arn

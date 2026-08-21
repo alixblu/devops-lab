@@ -1,0 +1,15 @@
+[
+  { "ParameterKey": "EnvironmentName", "ParameterValue": "prod" },
+  { "ParameterKey": "DomainName", "ParameterValue": "alixblu.site" },
+  { "ParameterKey": "ApiDomainName", "ParameterValue": "api.alixblu.site" },
+  { "ParameterKey": "ECSContainerPort", "ParameterValue": "8000" },
+  { "ParameterKey": "ECRRepositoryName", "ParameterValue": "book-manager-backend" },
+  { "ParameterKey": "ECSContainerName", "ParameterValue": "book-manager-backend" },
+  { "ParameterKey": "DesiredTaskCount", "ParameterValue": "2" },
+  { "ParameterKey": "ECRImageTag", "ParameterValue": "latest" },
+  { "ParameterKey": "DBName", "ParameterValue": "book_manager" },
+  { "ParameterKey": "GitHubOwner", "ParameterValue": "alixblu" },
+  { "ParameterKey": "GitHubRepo", "ParameterValue": "devops-lab" },
+  { "ParameterKey": "GitHubBranch", "ParameterValue": "main" },
+  { "ParameterKey": "GitHubConnectionName", "ParameterValue": "alixbluGithubConnection" }
+]
